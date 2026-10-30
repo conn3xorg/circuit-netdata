@@ -78,7 +78,7 @@ jobs:
           conn3x plan -detailed-exitcode
       - name: Check the child collects and answers on loopback only, unclaimed and opted out
         run: |
-          sudo podman exec -i circuit-netdata-child sh -eu <<'EOF'
+          sudo podman exec -i circuit-netdata-child sh -eux <<'EOF'
           command -v curl >/dev/null || { apt-get update -q && DEBIAN_FRONTEND=noninteractive apt-get install -yq curl; } >/dev/null
           systemctl is-active netdata
           test -e /etc/netdata/.opt-out-from-anonymous-statistics
@@ -86,7 +86,12 @@ jobs:
           grep -Eq '"version": ?"v2.12.2"' /tmp/info
           grep -Eq '"agent-claimed": ?false' /tmp/info
           test ! -e /etc/netdata/claim.conf
-          curl -sf 'http://127.0.0.1:19999/api/v1/data?chart=system.cpu&after=-10&format=json' | grep -Eq '^ *\[[0-9]{10},'
+          # A freshly started agent has no samples for a moment.
+          for _ in $(seq 60); do
+            curl -sf 'http://127.0.0.1:19999/api/v1/data?chart=system.cpu&after=-10&format=json' | grep -Eq '^ *\[[0-9]{10},' && exit 0
+            sleep 1
+          done
+          exit 1
           EOF
       - name: Check the parent receives the child's stream, and can't reach the child's own port
         run: |
