@@ -1,0 +1,110 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install Conn3x
+        env: &gh
+          GH_TOKEN: ${{ github.token }}
+        run: &install |
+          tag=$(gh release view -R conn3xorg/conn3x --json tagName -q .tagName)
+          file="conn3x_${tag#v}_linux_amd64.tar.gz"
+          cd "$RUNNER_TEMP"
+          curl -sSfLO "https://github.com/conn3xorg/conn3x/releases/download/$tag/$file"
+          curl -sSfLO "https://github.com/conn3xorg/conn3x/releases/download/$tag/checksums.txt"
+          grep " $file\$" checksums.txt | sha256sum -c -
+          mkdir -p bin && tar -xzf "$file" -C bin conn3x
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+      - run: conn3x version
+      - run: conn3x fmt -check -recursive
+      - name: Validate
+        run: conn3x init -backend=false && conn3x validate
+      - name: Validate the example
+        working-directory: examples/local
+        run: conn3x init -backend=false && conn3x validate
+
+  e2e:
+    needs: validate
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        distro: [rocky10, ubuntu2404, debian13]
+    name: e2e (${{ matrix.distro }})
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # The test host images live in the Conn3x repo.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: conn3xorg/conn3x
+          ref: main
+          path: conn3x
+          persist-credentials: false
+          sparse-checkout: test/images
+      - name: Install Conn3x
+        env: *gh
+        run: *install
+      - name: Start the ${{ matrix.distro }} parent and child
+        working-directory: examples/local
+        env:
+          CONTAINERFILE: ${{ github.workspace }}/conn3x/test/images/${{ matrix.distro }}/Containerfile
+          # The hosts are privileged, so Netdata's unit can set up its
+          # mount namespace.
+          PODMAN: sudo podman
+        run: ./up.sh
+      # The key is a shared secret, kept out of state, so the plan needs the
+      # same one as the apply to find no changes.
+      - name: Apply, then plan again with no changes
+        working-directory: examples/local
+        run: |
+          export TF_VAR_stream_api_key=$(cat /proc/sys/kernel/random/uuid)
+          conn3x init
+          conn3x apply -auto-approve
+          conn3x plan -detailed-exitcode
+      - name: Check the child collects and answers on loopback only, unclaimed and opted out
+        run: |
+          sudo podman exec -i circuit-netdata-child sh -eu <<'EOF'
+          command -v curl >/dev/null || { apt-get update -q && DEBIAN_FRONTEND=noninteractive apt-get install -yq curl; } >/dev/null
+          systemctl is-active netdata
+          test -e /etc/netdata/.opt-out-from-anonymous-statistics
+          for _ in $(seq 60); do curl -sf http://127.0.0.1:19999/api/v1/info > /tmp/info && break; sleep 1; done
+          grep -Eq '"version": ?"v2.12.2"' /tmp/info
+          grep -Eq '"agent-claimed": ?false' /tmp/info
+          test ! -e /etc/netdata/claim.conf
+          curl -sf 'http://127.0.0.1:19999/api/v1/data?chart=system.cpu&after=-10&format=json' | grep -Eq '^ *\[[0-9]{10},'
+          EOF
+      - name: Check the parent receives the child's stream, and can't reach the child's own port
+        run: |
+          sudo podman exec -i circuit-netdata-parent sh -eu <<'EOF'
+          command -v curl >/dev/null || { apt-get update -q && DEBIAN_FRONTEND=noninteractive apt-get install -yq curl; } >/dev/null
+          # The child listens on 127.0.0.1 only.
+          if curl -s --max-time 5 -o /dev/null http://circuit-netdata-child:19999/; then exit 1; fi
+          for _ in $(seq 60); do
+            curl -sf http://127.0.0.1:19999/api/v2/nodes | grep -q '"nm":"circuit-netdata-child"' &&
+              curl -sf 'http://127.0.0.1:19999/host/circuit-netdata-child/api/v1/data?chart=system.cpu&after=-10&format=json' | grep -Eq '^ *\[[0-9]{10},' &&
+              exit 0
+            sleep 1
+          done
+          exit 1
+          EOF
+      - name: Clean up
+        if: always()
+        working-directory: examples/local
+        env:
+          PODMAN: sudo podman
+        run: ./down.sh
