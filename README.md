@@ -1,5 +1,7 @@
 # circuit-netdata
 
+[![Conn3x grade](https://conn3x.org/circuits/netdata/grade.svg)](https://conn3x.org/circuits/netdata/grade)
+
 A Conn3x circuit that installs the Netdata Agent from Netdata's own package repository, so every host collects thousands of metrics once a second and shows them on a dashboard at port 19999. Install it, wait a few seconds, and you can see which process ate the CPU at 03:12:07, not just that the five-minute average looked high.
 
 What it doesn't do is phone home. Out of the box, the circuit opts the Agent out of Netdata's anonymous telemetry before it ever starts, binds the dashboard to `127.0.0.1` so only the host itself (or a proxy in front of it) can reach it, and leaves Netdata Cloud alone. Connecting to Cloud is one switch away if you want it. So is streaming: point a few children at a parent and you get one dashboard for all of them, with the parent keeping their history.
