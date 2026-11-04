@@ -14,7 +14,7 @@ cd "$(dirname "$0")"
 port=${PORT:-2301}
 child_port=$((port + 1))
 containerfile=${CONTAINERFILE:-Containerfile}
-name=${NAME:-circuit-netdata}
+name=${CONTAINER_NAME:-circuit-netdata}
 
 podman=${PODMAN:-podman}
 [ -f id_ed25519 ] || ssh-keygen -q -t ed25519 -N '' -C "$name" -f id_ed25519
