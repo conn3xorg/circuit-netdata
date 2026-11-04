@@ -68,14 +68,29 @@ jobs:
           PODMAN: sudo podman
         run: ./up.sh
       # The key is a shared secret, kept out of state, so the plan needs the
-      # same one as the apply to find no changes.
+      # same one as the apply to find no changes, and the state check needs
+      # it to look for.
+      - name: Make a stream key
+        run: |
+          key=$(cat /proc/sys/kernel/random/uuid)
+          echo "::add-mask::$key"
+          echo "TF_VAR_stream_api_key=$key" >> "$GITHUB_ENV"
       - name: Apply, then plan again with no changes
         working-directory: examples/local
         run: |
-          export TF_VAR_stream_api_key=$(cat /proc/sys/kernel/random/uuid)
           conn3x init
           conn3x apply -auto-approve
           conn3x plan -detailed-exitcode
+      # The key reaches the hosts write-only, so state holds none of it, and
+      # nothing Conn3x writes under .terraform does either.
+      - name: Check the stream key stays out of state
+        working-directory: examples/local
+        run: |
+          test -s terraform.tfstate || { echo "No terraform.tfstate to check." >&2; exit 1; }
+          if grep -rqF --exclude-dir=modules -e "$TF_VAR_stream_api_key" terraform.tfstate .terraform/; then
+            echo "The stream key is in terraform.tfstate or under .terraform/." >&2
+            exit 1
+          fi
       - name: Check the child collects and answers on loopback only, unclaimed and opted out
         run: |
           sudo podman exec -i circuit-netdata-child sh -eux <<'EOF'
