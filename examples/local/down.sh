@@ -3,7 +3,7 @@
 # created here.
 set -eu
 cd "$(dirname "$0")"
-name=${NAME:-circuit-netdata}
+name=${CONTAINER_NAME:-circuit-netdata}
 podman=${PODMAN:-podman}
 $podman rm -f -v "$name-parent" "$name-child" >/dev/null 2>&1 || true
 $podman network rm "$name" >/dev/null 2>&1 || true
