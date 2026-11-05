@@ -10,7 +10,7 @@ What it doesn't do is phone home. Out of the box, the circuit opts the Agent out
 
 ```hcl
 module "netdata" {
-  source = "github.com/conn3xorg/circuit-netdata?ref=v0.1.0"
+  source = "github.com/conn3xorg/circuit-netdata?ref=v0.1.1"
 
   hosts                = { web1 = "203.0.113.10", web2 = "203.0.113.11" }
   ssh_private_key_file = "~/.ssh/id_ed25519"
@@ -58,7 +58,7 @@ variable "stream_api_key" {
 }
 
 module "netdata_parent" {
-  source = "github.com/conn3xorg/circuit-netdata?ref=v0.1.0"
+  source = "github.com/conn3xorg/circuit-netdata?ref=v0.1.1"
 
   hosts                = { mon1 = "10.0.0.5" }
   ssh_private_key_file = "~/.ssh/id_ed25519"
@@ -69,7 +69,7 @@ module "netdata_parent" {
 }
 
 module "netdata_children" {
-  source = "github.com/conn3xorg/circuit-netdata?ref=v0.1.0"
+  source = "github.com/conn3xorg/circuit-netdata?ref=v0.1.1"
 
   hosts                = { web1 = "10.0.0.11", web2 = "10.0.0.12" }
   ssh_private_key_file = "~/.ssh/id_ed25519"
