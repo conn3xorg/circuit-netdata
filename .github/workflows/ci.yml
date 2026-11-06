@@ -42,7 +42,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        distro: [rocky10, rocky9, ubuntu2404, debian13]
+        distro: [rocky10, debian12, ubuntu2404, debian13]
     name: e2e (${{ matrix.distro }})
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -62,8 +62,8 @@ jobs:
       - name: Start the ${{ matrix.distro }} parent and child
         working-directory: examples/local
         env:
-          # Conn3x has no Rocky Linux 9 test image, so that one lives here.
-          CONTAINERFILE: ${{ github.workspace }}/${{ matrix.distro == 'rocky9' && 'test/images' || 'conn3x/test/images' }}/${{ matrix.distro }}/Containerfile
+          # Conn3x has no Debian 12 test image, so that one lives here.
+          CONTAINERFILE: ${{ github.workspace }}/${{ matrix.distro == 'debian12' && 'test/images' || 'conn3x/test/images' }}/${{ matrix.distro }}/Containerfile
           # The hosts are privileged, so Netdata's unit can set up its
           # mount namespace.
           PODMAN: sudo podman
