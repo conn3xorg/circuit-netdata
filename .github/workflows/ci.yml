@@ -42,7 +42,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        distro: [rocky10, ubuntu2404, debian13]
+        distro: [rocky10, debian12, ubuntu2404, debian13]
     name: e2e (${{ matrix.distro }})
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -62,7 +62,8 @@ jobs:
       - name: Start the ${{ matrix.distro }} parent and child
         working-directory: examples/local
         env:
-          CONTAINERFILE: ${{ github.workspace }}/conn3x/test/images/${{ matrix.distro }}/Containerfile
+          # Conn3x has no Debian 12 test image, so that one lives here.
+          CONTAINERFILE: ${{ github.workspace }}/${{ matrix.distro == 'debian12' && 'test/images' || 'conn3x/test/images' }}/${{ matrix.distro }}/Containerfile
           # The hosts are privileged, so Netdata's unit can set up its
           # mount namespace.
           PODMAN: sudo podman
@@ -122,6 +123,25 @@ jobs:
           done
           exit 1
           EOF
+      # Restarting the child's container boots systemd again, so this checks
+      # Netdata is enabled and streams to the parent again from the config
+      # on disk: the parent must get samples from after the restart.
+      - name: Restart the child, then check the parent gets its stream again
+        working-directory: examples/local
+        run: |
+          t=$(date +%s)
+          sudo podman restart circuit-netdata-child
+          sudo podman exec circuit-netdata-child timeout 60 systemctl is-system-running --wait || true
+          sudo podman exec -i -e t="$t" circuit-netdata-parent sh -eu <<'EOF'
+          for _ in $(seq 90); do
+            newest=$(curl -sf 'http://127.0.0.1:19999/host/circuit-netdata-child/api/v1/data?chart=system.cpu&after=-10&format=json' | sed -nE 's/^ *\[([0-9]{10}), ?-?[0-9].*/\1/p' | sort -n | tail -n 1 || true)
+            # Rows with values only, newer than the restart.
+            [ "${newest:-0}" -gt "$t" ] && exit 0
+            sleep 1
+          done
+          exit 1
+          EOF
+          conn3x plan -detailed-exitcode
       - name: Clean up
         if: always()
         working-directory: examples/local
